@@ -14,6 +14,7 @@ validate:
 	python3 scripts/validate_pak.py pak
 test:
 	sh tests/test-launch.sh
+	ruby tests/test_sa_timing.rb
 check: validate test
 source:
 	python3 scripts/source_archive.py

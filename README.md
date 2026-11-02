@@ -81,3 +81,28 @@ Leaf's Menu return-to-launcher behavior is used; Leaf save states and Game
 Switcher are not supported. Save in the game's own menu before exiting.
 The binary and package are checked on the build host; display, audio, controls
 and game execution still require testing on a physical MLP1.
+
+## Pokemon SA timing compatibility (v1.0.4)
+
+The optional `emulators/mkxp-z/profiles/pokemon-sa-timing.rb` preload fixes
+SA's conversion of `Graphics.delta` from seconds as though it were microseconds.
+The incorrect conversion can stall the battle-entry flash while music keeps
+playing. The corrected profile was tested on an MLP1 and battle scenes work.
+It overrides only `Graphics.delta_s`, preserving the game's speed-plugin
+`Graphics.update` alias chain. This is a game-specific profile, not a global fix.
+
+Copy this profile to a persistent location on the card and append its absolute
+path to the game's existing `preloadScript` array in `mkxp.json`. Keep all
+existing preload entries. Set `fixedFramerate` to `0` so the game controls its
+frame rate. Restart the game after changing the configuration. To disable the
+profile, remove only its entry from `preloadScript` and restart.
+
+Keep `"patches": ["patch"]` if using JoiPlay's existing map optimization files;
+those Data and Graphics files must stay together. The experimental static
+battler overlay was rolled back after device testing and is not included in
+this release. No game assets or saves are distributed.
+
+For troubleshooting, the timing preload records frame-rate, Ruby GC and
+main-thread stack samples every five seconds for the first three minutes to
+`leaf-performance.log` in the game's mkxp-z data directory. The profile does
+not force garbage collection or write logs on each frame.
