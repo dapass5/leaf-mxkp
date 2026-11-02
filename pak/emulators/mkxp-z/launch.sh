@@ -29,8 +29,18 @@ GAME_KEY="$(printf '%s' "$RELATIVE_GAME" | cksum | awk '{print $1 "-" $2}')"
 RUN_DIR="$USERDATA_PATH/mkxp-z/$GAME_KEY"
 mkdir -p "$RUN_DIR" "$SAVES_PATH/mkxp-z/$GAME_KEY" "$LOGS_PATH" || fail "cannot create runtime directories"
 MKXPZ_LEAF_KEYMAP=""
-[ ! -f "$RUN_DIR/controller.keys" ] || MKXPZ_LEAF_KEYMAP="$RUN_DIR/controller.keys"
+# Resolve afresh at every launch; the game's profile takes precedence over
+# the old userdata location so existing installations can migrate gradually.
+if [ -f "$GAME_DIR/controller.keys" ]; then
+    MKXPZ_LEAF_KEYMAP="$GAME_DIR/controller.keys"
+elif [ -f "$RUN_DIR/controller.keys" ]; then
+    MKXPZ_LEAF_KEYMAP="$RUN_DIR/controller.keys"
+fi
 export MKXPZ_LEAF_KEYMAP
+# Native frame timing is opt-in per game and stops after four minutes.
+MKXPZ_LEAF_FRAME_TRACE=""
+[ ! -f "$RUN_DIR/frame-trace.enabled" ] || MKXPZ_LEAF_FRAME_TRACE="$RUN_DIR/leaf-frame-trace.csv"
+export MKXPZ_LEAF_FRAME_TRACE
 # SDL_GetPrefPath interprets org/app as names, not absolute paths.
 XDG_DATA_HOME="$SAVES_PATH"
 export XDG_DATA_HOME

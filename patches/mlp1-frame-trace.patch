@@ -1,0 +1,116 @@
+diff --git a/src/display/graphics.cpp b/src/display/graphics.cpp
+index 33454681..7acc8228 100644
+--- a/src/display/graphics.cpp
++++ b/src/display/graphics.cpp
+@@ -66,6 +66,8 @@
+ #include <time.h>
+ #include <cmath>
+ #include <climits>
++#include <cstdio>
++#include <cstdlib>
+ 
+ 
+ #define DEF_SCREEN_W (rgssVer == 1 ? 640 : 544)
+@@ -691,6 +693,62 @@ private:
+ /* Nanoseconds per second */
+ #define NS_PER_S 1000000000
+ 
++
++// Opt-in bounded native tracing. No Ruby hooks or per-frame file writes.
++// gap_ms includes script work AND binding/GVL overhead between update calls;
++// it must not be interpreted as pure Ruby execution time.
++struct LeafFrameTrace {
++    FILE *file = nullptr;
++    uint64_t previousEnd = 0, started = 0, sequence = 0;
++    double composite = 0, limiter = 0, swap = 0;
++    char buffer[65536];
++    size_t used = 0;
++    static double now() {
++        return double(SDL_GetPerformanceCounter()) * 1000.0 / SDL_GetPerformanceFrequency();
++    }
++    LeafFrameTrace() {
++        const char *path = std::getenv("MKXPZ_LEAF_FRAME_TRACE");
++        if (path && *path) file = std::fopen(path, "w");
++        if (file) {
++            std::fputs("sample,monotonic_ms,frame,gap_ms,update_ms,composite_ms,limiter_ms,swap_ms\n", file);
++            started = SDL_GetTicks64();
++        }
++    }
++    void flush() {
++        if (file && used) { std::fwrite(buffer, 1, used, file); std::fflush(file); used = 0; }
++    }
++    ~LeafFrameTrace() { flush(); if (file) std::fclose(file); }
++    struct Scope {
++        LeafFrameTrace &trace;
++        double begin, gap;
++        int &frame;
++        Scope(LeafFrameTrace &t, int &f) : trace(t), begin(0), gap(0), frame(f) {
++            if (!trace.file) return;
++            begin = now();
++            gap = trace.previousEnd ? begin - trace.previousEnd / 1000.0 : 0;
++            trace.composite = trace.limiter = trace.swap = 0;
++        }
++        ~Scope() {
++            if (!trace.file) return;
++            double end = now();
++            trace.previousEnd = uint64_t(end * 1000.0);
++            int length = std::snprintf(trace.buffer + trace.used, sizeof(trace.buffer) - trace.used,
++                "%llu,%.3f,%d,%.3f,%.3f,%.3f,%.3f,%.3f\n",
++                (unsigned long long)++trace.sequence, begin, frame, gap, end - begin,
++                trace.composite, trace.limiter, trace.swap);
++            if (length > 0) trace.used += size_t(length);
++            if (trace.used > sizeof(trace.buffer) - 512 || trace.sequence % 120 == 0) trace.flush();
++            if (SDL_GetTicks64() - trace.started >= 240000) {
++                trace.flush(); std::fclose(trace.file); trace.file = nullptr;
++            }
++        }
++    };
++};
++static LeafFrameTrace &leafFrameTrace() {
++    static LeafFrameTrace trace;
++    return trace;
++}
++
+ struct FPSLimiter {
+     uint64_t lastTickCount;
+     
+@@ -1031,7 +1089,10 @@ struct GraphicsPrivate {
+     
+ private:
+     template <typename... Args> void swapGLBufferImpl(const Vec2i &screenSize, TEXFBO &source, int scaleIsSpecial, Args... args) {
++        auto &trace = leafFrameTrace();
++        double mark = trace.file ? LeafFrameTrace::now() : 0;
+         fpsLimiter.delay();
++        if (trace.file) trace.limiter += LeafFrameTrace::now() - mark;
+ 
+         GLMeta::blitBeginScreen(screenSize, scaleIsSpecial);
+         GLMeta::blitSource(source, scaleIsSpecial);
+@@ -1043,7 +1104,9 @@ private:
+             };
+             FBO::clear();
+             metaBlitBufferFlippedScaled(args...);
++            mark = trace.file ? LeafFrameTrace::now() : 0;
+             SDL_GL_SwapWindow(threadData->window);
++            if (trace.file) trace.swap += LeafFrameTrace::now() - mark;
+             mkxp_angle_direct3d_resize_callback = nullptr;
+         }
+ 
+@@ -1099,7 +1162,10 @@ public:
+     }
+     
+     void redrawScreen() {
++        auto &trace = leafFrameTrace();
++        double mark = trace.file ? LeafFrameTrace::now() : 0;
+         screen.composite();
++        if (trace.file) trace.composite += LeafFrameTrace::now() - mark;
+         
+         // maybe unspaghetti this later
+         if (integerScaleStepApplicable() && !integerLastMileScaling)
+@@ -1218,6 +1284,7 @@ double Graphics::lastUpdate() {
+ }
+ 
+ void Graphics::update(bool checkForShutdown) {
++    LeafFrameTrace::Scope frameTrace(leafFrameTrace(), p->frameCount);
+     p->threadData->rqWindowAdjust.wait();
+     p->last_update = shState->runTime();
+     

@@ -60,9 +60,14 @@ is not guaranteed by mkxp-z.
 Leaf keeps the display fullscreen even if a game's saved settings request a
 small desktop window; game rendering resolutions still scale to the display.
 
-Optional controller profiles live in `USERDATA_PATH/mkxp-z/<game-key>/controller.keys`
-beside the generated mkxp.json. Each line maps an SDL controller button/axis
-to a keyboard key, for example `a=Z`, `lefttrigger=Q`, or `leftx-=Left`.
+Put an optional `controller.keys` in the game directory, beside `Game.ini` and
+`mkxp.json`. The launcher selects it anew on every game launch; edit the file
+and restart the game to apply changes. If it is absent, the launcher falls back
+to the old `USERDATA_PATH/mkxp-z/<game-key>/controller.keys` location. If neither
+exists, mkxp-z uses its normal controller bindings.
+Each line maps an SDL controller button/axis
+to a keyboard key, for example `a=X`, `b=Z`, `lefttrigger=Q`, or `leftx-=Left`.
+Use UTF-8 without a BOM. Lines starting with `#` are comments.
 When enabled, the profile replaces direct RGSS controller bindings and also
 feeds the raw keyboard API used by games with custom controls. The physical
 keyboard remains active. The stick dead zone is 16000 of 32767.
@@ -71,7 +76,7 @@ keyboard remains active. The stick dead zone is 16000 of 32767.
 | Handheld | Keyboard | SA action |
 | --- | --- | --- |
 | D-pad / left stick | Arrows | Move |
-| A / B | Z / X | Confirm / cancel or run |
+| A / B | X / Z | Cancel or run / confirm |
 | X / Y | C / W | Menu / Pokedex |
 | L / R | A / S | Previous / next page |
 | L2 / R2 | Q / D | Speed / registered action |
@@ -106,3 +111,46 @@ For troubleshooting, the timing preload records frame-rate, Ruby GC and
 main-thread stack samples every five seconds for the first three minutes to
 `leaf-performance.log` in the game's mkxp-z data directory. The profile does
 not force garbage collection or write logs on each frame.
+
+### Optional SA performance profile (device validation in progress)
+
+`emulators/mkxp-z/profiles/pokemon-sa-performance.rb` is a separate opt-in
+profile. Copy it and the adjacent `pokemon-sa-performance.conf` to a persistent
+directory on the card, then append the Ruby file's absolute path to the game's
+existing `preloadScript` array. Keep the timing profile and original map patches.
+Restart the game to apply changes.
+
+The default settings hide character foot shadows and dynamic character
+projections. They also fuse the Essentials and MakerStudio tile-coordinate
+methods, preserving scroll offsets and rotated/flipped tile alignment. The
+`batched_tiles` setting replaces the core tile traversal with a loop that reuses
+its visited-cell buffer and reads map data once per map. MakerStudio's outer
+lighting, extended-layer, fog and map-shadow updates still run normally. Local
+comparison against the existing engine method covered 48 scene transitions;
+host timing of the isolated loop is not a handheld FPS benchmark. The
+`hash_lookup` setting works around Luka's Scripting Utilities rebuilding and
+scanning the complete hash key array on every membership query. Successful
+plain Symbol/Integer lookups use native `key?`; other keys and all misses retain
+the original plugin's semantics, including multiple query arguments. This only
+installs when that plugin's override and the native `key?` are detected. The
+profile installs after `PluginManager.runPlugins` returns, so plugin aliases
+are already in place. It does not hook `Graphics.update`, change frame rate,
+skip event updates or replace game assets. MakerStudio's map shadow layers,
+reflections and fog remain controlled by the game.
+
+Set `shadows=on` to restore character shadows, `tile_coordinates=off` to disable
+only the coordinate optimization, `batched_tiles=off` to restore the original
+tile traversal, or `enabled=off` to restore all original
+behaviours on the next launch. Removing this profile from `preloadScript` also
+disables it. Unknown settings cause the profile to log an error and skip setup.
+Performance gains still require a comparison on the same map and route.
+Use `hash_lookup=off` to disable only the hash membership workaround.
+
+`speedup_render=on` targets the game's Better Speed Up plugin: during Q
+acceleration, prepare the map renderer once immediately before each displayed
+frame instead of on every intermediate logical tick. Player, event, interpreter
+and character updates retain their original cadence. Normal speed, menus,
+battles, explicit map refreshes and transfers retain renderer updates. This
+requires the recognized 1x/2x/3x plugin and MakerStudio renderer. Map visual
+animation can differ during acceleration; device validation is still required.
+Use `speedup_render=off` and restart to disable it.

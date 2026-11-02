@@ -15,6 +15,10 @@ validate:
 test:
 	sh tests/test-launch.sh
 	ruby tests/test_sa_timing.rb
+	ruby tests/test_sa_performance.rb
+	ruby tests/test_sa_tile_loop.rb
+	ruby tests/test_sa_hash_lookup.rb
+	ruby tests/test_sa_speedup.rb
 check: validate test
 source:
 	python3 scripts/source_archive.py

@@ -1,6 +1,6 @@
 # SDL controller button/axis = keyboard key (SA default controls)
-a=Z
-b=X
+a=X
+b=Z
 x=C
 y=W
 leftshoulder=A
