@@ -1,0 +1,35 @@
+{
+  "name": "mkxp-z",
+  "platform": "mlp1",
+  "pak_version": "1.0.3",
+  "min_leaf_version": "0.11.0",
+  "provides": {
+    "schema": 1,
+    "systems": [
+      {
+        "id": "MKXPZ",
+        "name": "RPG Maker (mkxp-z)",
+        "patterns": ["MKXPZ"],
+        "extensions": ["mkxp", "rgssad", "rgss2a", "rgss3a"],
+        "rom_root": "Roms/MKXPZ",
+        "image_root": "Images/MKXPZ",
+        "default_core": "mkxp_z",
+        "icon_flat": "art/MKXPZ.png",
+        "icon_photographic": null,
+        "group": "Computer"
+      }
+    ],
+    "system_extensions": [],
+    "cores": [
+      {
+        "id": "mkxp_z",
+        "display_name": "mkxp-z",
+        "type": "path",
+        "path": "emulators/mkxp-z/launch.sh",
+        "supports_menu": false,
+        "supports_savestate": false,
+        "supports_disk_control": false
+      }
+    ]
+  }
+}

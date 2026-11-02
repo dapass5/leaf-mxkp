@@ -1,0 +1,19 @@
+diff --git a/src/config.cpp b/src/config.cpp
+--- a/src/config.cpp
++++ b/src/config.cpp
+@@ -232,6 +232,15 @@
+     }
+     
+     json::value baseConf = readConfFile(CONF_FILE);
++    // Leaf generates mount-specific paths, but games may supply essential
++    // preload scripts, fonts and rendering settings in their own JSON5 config.
++    const char *leafGameConfig = SDL_getenv("MKXPZ_LEAF_GAME_CONFIG");
++    if (leafGameConfig && *leafGameConfig) {
++        json::value gameConf = readConfFile(leafGameConfig);
++        copyObject(optsJ, gameConf);
++        copyObject(opts["bindingNames"], gameConf.as_object()["bindingNames"], "bindingNames .");
++    }
++    // Leaf's generated paths and fullscreen policy take precedence.
+     copyObject(optsJ, baseConf);
+     copyObject(opts["bindingNames"], baseConf.as_object()["bindingNames"], "bindingNames .");
+     

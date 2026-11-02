@@ -1,0 +1,13 @@
+diff --git a/src/display/font.h b/src/display/font.h
+index 3f6750f3..cebe751f 100644
+--- a/src/display/font.h
++++ b/src/display/font.h
+@@ -29,7 +29,7 @@
+ #include <string>
+ 
+ struct SDL_RWops;
+-struct MKXPZ_TTF_FONT;
++#include <SDL_ttf.h>
+ struct Config;
+ 
+ struct SharedFontStatePrivate;

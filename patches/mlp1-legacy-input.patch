@@ -1,0 +1,18 @@
+diff --git a/binding/input-binding.cpp b/binding/input-binding.cpp
+--- a/binding/input-binding.cpp
++++ b/binding/input-binding.cpp
+@@ -598,6 +598,14 @@
+     
+     _rb_define_module_function(module, "raw_key_states", inputRawKeyStates);
+     
++    // Older mkxp-based games use these input functions on System.
++    VALUE legacy = rb_define_module("System");
++    _rb_define_module_function(legacy, "mouse_x", inputMouseX);
++    _rb_define_module_function(legacy, "mouse_y", inputMouseY);
++    _rb_define_module_function(legacy, "mouse_in_window", inputMouseInWindow);
++    _rb_define_module_function(legacy, "mouse_in_window?", inputMouseInWindow);
++    _rb_define_module_function(legacy, "raw_key_states", inputRawKeyStates);
++
+     VALUE submod = rb_define_module_under(module, "Controller");
+     _rb_define_module_function(submod, "connected?", inputControllerConnected);
+     _rb_define_module_function(submod, "name", inputControllerName);

@@ -1,0 +1,189 @@
+diff --git a/src/eventthread.h b/src/eventthread.h
+--- a/src/eventthread.h
++++ b/src/eventthread.h
+@@ -72,6 +72,9 @@
+ 	};
+ 
+ 	static uint8_t keyStates[SDL_NUM_SCANCODES];
++    static uint8_t mappedKeyStates[SDL_NUM_SCANCODES];
++    static bool keyboardController;
++    static bool keyPressed(SDL_Scancode key) { return keyStates[key] || mappedKeyStates[key]; }
+     static ControllerState controllerState;
+ 	static MouseState mouseState;
+ 	static TouchState touchState;
+diff --git a/src/eventthread.cpp b/src/eventthread.cpp
+--- a/src/eventthread.cpp
++++ b/src/eventthread.cpp
+@@ -55,6 +55,9 @@
+ #endif
+ 
+ #include <string.h>
++#include "input/leaf-keymap.h"
++
++static LeafKeymap leafKeymap;
+ 
+ typedef void (ALC_APIENTRY *LPALCDEVICEPAUSESOFT) (ALCdevice *device);
+ typedef void (ALC_APIENTRY *LPALCDEVICERESUMESOFT) (ALCdevice *device);
+@@ -86,6 +89,8 @@
+ #define HAVE_ALC_DEVICE_PAUSE alc.DevicePause
+ 
+ uint8_t EventThread::keyStates[];
++uint8_t EventThread::mappedKeyStates[];
++bool EventThread::keyboardController = false;
+ EventThread::ControllerState EventThread::controllerState;
+ EventThread::MouseState EventThread::mouseState;
+ EventThread::TouchState EventThread::touchState;
+@@ -166,6 +171,8 @@
+ #endif
+     
+     fullscreen = rtData.config.fullscreen;
++    keyboardController = leafKeymap.load(SDL_getenv("MKXPZ_LEAF_KEYMAP"));
++    if (keyboardController) Debug() << "Leaf controller keyboard profile loaded";
+     int toggleFSMod = rtData.config.anyAltToggleFS ? KMOD_ALT : KMOD_LALT;
+     
+     bool displayingFPS = rtData.config.displayFPS;
+@@ -424,14 +431,17 @@
+                 
+             case SDL_CONTROLLERBUTTONDOWN:
+                 controllerState.buttons[event.cbutton.button] = true;
++                if (keyboardController) leafKeymap.apply(controllerState.axes, controllerState.buttons, mappedKeyStates);
+                 break;
+                 
+             case SDL_CONTROLLERBUTTONUP:
+                 controllerState.buttons[event.cbutton.button] = false;
++                if (keyboardController) leafKeymap.apply(controllerState.axes, controllerState.buttons, mappedKeyStates);
+                 break;
+                 
+             case SDL_CONTROLLERAXISMOTION:
+                 controllerState.axes[event.caxis.axis] = event.caxis.value;
++                if (keyboardController) leafKeymap.apply(controllerState.axes, controllerState.buttons, mappedKeyStates);
+                 break;
+                 
+             case SDL_CONTROLLERDEVICEADDED:
+@@ -698,6 +708,7 @@
+ void EventThread::resetInputStates()
+ {
+     memset(&keyStates, 0, sizeof(keyStates));
++    memset(&mappedKeyStates, 0, sizeof(mappedKeyStates));
+     memset(&controllerState, 0, sizeof(controllerState));
+     memset(&mouseState.buttons, 0, sizeof(mouseState.buttons));
+     memset(&touchState, 0, sizeof(touchState));
+diff --git a/src/input/input.cpp b/src/input/input.cpp
+--- a/src/input/input.cpp
++++ b/src/input/input.cpp
+@@ -515,14 +515,14 @@
+     {
+         /* Special case aliases */
+         if (source == SDL_SCANCODE_LSHIFT)
+-            return EventThread::keyStates[source]
+-            || EventThread::keyStates[SDL_SCANCODE_RSHIFT];
++            return EventThread::keyPressed(source)
++            || EventThread::keyPressed(SDL_SCANCODE_RSHIFT);
+         
+         if (source == SDL_SCANCODE_RETURN)
+-            return EventThread::keyStates[source]
+-            || EventThread::keyStates[SDL_SCANCODE_KP_ENTER];
+-        
+-        return EventThread::keyStates[source];
++            return EventThread::keyPressed(source)
++            || EventThread::keyPressed(SDL_SCANCODE_KP_ENTER);
++        
++        return EventThread::keyPressed(source);
+     }
+     
+     bool sourceRepeatable() const
+@@ -544,7 +544,7 @@
+     
+     bool sourceActive() const
+     {
+-        return EventThread::controllerState.buttons[source];
++        return !EventThread::keyboardController && EventThread::controllerState.buttons[source];
+     }
+     
+     bool sourceRepeatable() const
+@@ -565,6 +565,7 @@
+     bool sourceActive() const
+     {
+         float val = EventThread::controllerState.axes[source];
++        if (EventThread::keyboardController) return false;
+         
+         if (dir == Negative)
+             return val < -JAXIS_THRESHOLD;
+@@ -1056,6 +1057,8 @@
+     {
+         
+         memcpy(rawStates, shState->eThread().keyStates, SDL_NUM_SCANCODES);
++        for (int i = 0; i < SDL_NUM_SCANCODES; ++i)
++            rawStates[i] |= EventThread::mappedKeyStates[i];
+         
+         for (int i = 0; i < SDL_NUM_SCANCODES; i++)
+         {
+diff --git a/src/input/leaf-keymap.h b/src/input/leaf-keymap.h
+new file mode 100644
+--- /dev/null
++++ b/src/input/leaf-keymap.h
+@@ -0,0 +1,64 @@
++#ifndef LEAF_KEYMAP_H
++#define LEAF_KEYMAP_H
++
++#include <SDL.h>
++#include <cstdio>
++#include <cstring>
++#include <vector>
++
++// Optional per-game controller-to-keyboard profile for Leaf path cores.
++class LeafKeymap {
++    struct Entry { bool axis; int source, sign; SDL_Scancode key; };
++    std::vector<Entry> entries;
++
++    static char *trim(char *s) {
++        while (*s == ' ' || *s == '\t') ++s;
++        size_t n = std::strlen(s);
++        while (n && (s[n-1] == ' ' || s[n-1] == '\t' || s[n-1] == '\r' || s[n-1] == '\n')) s[--n] = 0;
++        return s;
++    }
++public:
++    bool load(const char *path) {
++        entries.clear();
++        if (!path || !*path) return false;
++        FILE *file = std::fopen(path, "r");
++        if (!file) return false;
++        char line[256];
++        bool valid = true;
++        while (std::fgets(line, sizeof(line), file)) {
++            char *source = trim(line);
++            if (!*source || *source == '#') continue;
++            char *equal = std::strchr(source, '=');
++            if (!equal) { valid = false; break; }
++            *equal++ = 0;
++            source = trim(source);
++            SDL_Scancode key = SDL_GetScancodeFromName(trim(equal));
++            if (key == SDL_SCANCODE_UNKNOWN) { valid = false; break; }
++            int sign = 1;
++            size_t n = std::strlen(source);
++            bool signedAxis = n && (source[n-1] == '+' || source[n-1] == '-');
++            if (signedAxis) { sign = source[n-1] == '-' ? -1 : 1; source[n-1] = 0; }
++            SDL_GameControllerAxis axis = SDL_GameControllerGetAxisFromString(source);
++            if (axis != SDL_CONTROLLER_AXIS_INVALID) {
++                entries.push_back({true, axis, sign, key});
++            } else {
++                SDL_GameControllerButton button = SDL_GameControllerGetButtonFromString(source);
++                if (signedAxis || button == SDL_CONTROLLER_BUTTON_INVALID) { valid = false; break; }
++                entries.push_back({false, button, 1, key});
++            }
++        }
++        if (std::ferror(file)) valid = false;
++        std::fclose(file);
++        if (!valid) entries.clear();
++        return !entries.empty();
++    }
++
++    void apply(const int *axes, const bool *buttons, uint8_t *keys) const {
++        std::memset(keys, 0, SDL_NUM_SCANCODES);
++        for (const Entry &entry : entries) {
++            bool pressed = entry.axis ? axes[entry.source] * entry.sign > 16000 : buttons[entry.source];
++            if (pressed) keys[entry.key] = 1;
++        }
++    }
++};
++#endif

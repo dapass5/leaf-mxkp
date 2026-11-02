@@ -1,0 +1,43 @@
+diff --git a/src/eventthread.cpp b/src/eventthread.cpp
+--- a/src/eventthread.cpp
++++ b/src/eventthread.cpp
+@@ -23,6 +23,7 @@
+ #include "eventthread.h"
+ 
+ #include <SDL_events.h>
++#include <SDL_hints.h>
+ #include <SDL_messagebox.h>
+ #include <SDL_timer.h>
+ #include <SDL_thread.h>
+@@ -488,7 +488,20 @@
+                         break;
+                         
+                     case REQUEST_WINRESIZE :
+-                        SDL_SetWindowSize(win, event.window.data1, event.window.data2);
++                        if (SDL_GetHintBoolean("MKXPZ_LEAF_FULLSCREEN", SDL_FALSE)) {
++                            // Games resize their logical canvas independently of
++                            // the handheld display. Refresh scaling after that
++                            // change without shrinking the physical SDL window.
++                            SDL_GetWindowSize(win, &winW, &winH);
++                            int drawableW, drawableH;
++                            SDL_GL_GetDrawableSize(win, &drawableW, &drawableH);
++                            windowSizeMsg.post(Vec2i(winW, winH));
++                            drawableSizeMsg.post(Vec2i(drawableW, drawableH));
++                            Debug() << "Leaf fullscreen window/drawable:" << winW << winH
++                                    << drawableW << drawableH;
++                        } else {
++                            SDL_SetWindowSize(win, event.window.data1, event.window.data2);
++                        }
+                         rtData.rqWindowAdjust.clear();
+                         break;
+                         
+@@ -691,6 +704,9 @@
+ 
+ void EventThread::setFullscreen(SDL_Window *win, bool mode)
+ {
++    // Leaf owns the physical display; game options must not leave a small window.
++    if (SDL_GetHintBoolean("MKXPZ_LEAF_FULLSCREEN", SDL_FALSE))
++        mode = true;
+     SDL_SetWindowFullscreen
+     (win, mode ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+     fullscreen = mode;
